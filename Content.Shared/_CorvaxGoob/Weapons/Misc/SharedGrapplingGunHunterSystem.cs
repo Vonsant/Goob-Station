@@ -229,6 +229,12 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             return;
         }
 
+        if (distance < gunComp.MinRange)
+        {
+            ReturnHook(gun, gunComp, null);
+            return;
+        }
+        
         var joint = _joints.CreateDistanceJoint(gun, args.Embedded, anchorA: new Vector2(0f, 0.5f), id: GrapplingJoint);
         joint.MinLength = gunComp.JointMinLength;
         var maxLength = MathF.Min(gunComp.MaxRange, MathF.Max(gunComp.JointMinLength, distance + gunComp.JointSlack));
