@@ -32,6 +32,7 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
     [Dependency] private readonly SharedJointSystem _joints = default!;
     [Dependency] private readonly SharedGunSystem _gun = default!;
     [Dependency] private readonly SharedPhysicsSystem _physics = default!;
+    [Dependency] protected readonly SharedTransformSystem TransformSystem = default!;
 
     public const string GrapplingJoint = "corvax-goob-hunter-grappling";
 
@@ -197,7 +198,9 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             return;
         }
 
-        var distance = Vector2.Distance(gunXform.MapPosition.Position, targetXform.MapPosition.Position);
+        var distance = Vector2.Distance(
+            TransformSystem.GetMapCoordinates(gun, gunXform).Position,
+            TransformSystem.GetMapCoordinates(args.Embedded, targetXform).Position);
 
         if (distance > gunComp.MaxRange)
         {
@@ -328,7 +331,9 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
                     continue;
                 }
 
-                var distance = Vector2.Distance(gunXform.MapPosition.Position, projectileXform.MapPosition.Position);
+                var distance = Vector2.Distance(
+                    TransformSystem.GetMapCoordinates(uid, gunXform).Position,
+                    TransformSystem.GetMapCoordinates(component.Projectile.Value, projectileXform).Position);
 
                 if (distance > component.MaxRange)
                     ReturnHook(uid, component, null);
