@@ -23,6 +23,9 @@ public sealed partial class GrapplingGunHunterComponent : Component
     public float MaxRange = 12f;
 
     [DataField, AutoNetworkedField]
+    public float ReelStopDistance = 1f;
+
+    [DataField, AutoNetworkedField]
     public EntityUid? Projectile;
 
     [DataField, AutoNetworkedField]

@@ -7,6 +7,7 @@
     - type: AmmoCounter
     - type: GrapplingGunHunter
       maxRange: 12
+      reelStopDistance: 3
       requireWieldedHands: true
       applyStunOnAttach: false
     - type: Gun

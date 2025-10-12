@@ -358,7 +358,27 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             if (!component.Reeling)
                 continue;
 
-            distanceJoint.MaxLength = MathF.Max(component.JointMinLength, distanceJoint.MaxLength - component.ReelRate * frameTime);
+            var reelGunXform = Transform(uid);
+            var targetXform = Transform(component.HookedTarget.Value);
+
+            if (targetXform.MapID != reelGunXform.MapID)
+            {
+                ReturnHook(uid, component, null);
+                continue;
+            }
+
+            var stopLength = MathF.Max(component.JointMinLength, component.ReelStopDistance);
+            var currentDistance = Vector2.Distance(
+                TransformSystem.GetMapCoordinates(uid, reelGunXform).Position,
+                TransformSystem.GetMapCoordinates(component.HookedTarget.Value, targetXform).Position);
+
+            if (currentDistance <= component.ReelStopDistance)
+            {
+                SetReeling(uid, component, false, null);
+                continue;
+            }
+
+            distanceJoint.MaxLength = MathF.Max(stopLength, distanceJoint.MaxLength - component.ReelRate * frameTime);
             distanceJoint.Length = MathF.Min(distanceJoint.MaxLength, distanceJoint.Length);
 
             _physics.WakeBody(joint.BodyAUid);
@@ -366,7 +386,7 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
 
             Dirty(uid, jointComp);
 
-            if (distanceJoint.MaxLength <= component.JointMinLength + component.PullStopTolerance)
+            if (distanceJoint.MaxLength <= stopLength + component.PullStopTolerance)
             {
                 SetReeling(uid, component, false, null);
             }
