@@ -3,6 +3,7 @@ using Content.Shared._CorvaxGoob.Weapons.Ranged.Components;
 using Content.Shared.CombatMode;
 using Content.Shared.Hands.EntitySystems;
 using Content.Shared.Hands;
+using Content.Shared.Hands.Components;
 using Content.Shared.Interaction;
 using Content.Shared.Mobs.Components;
 using Content.Shared.Physics;
@@ -11,12 +12,14 @@ using Content.Shared.Weapons.Misc;
 using Content.Shared.Weapons.Ranged.Events;
 using Content.Shared.Weapons.Ranged.Systems;
 using Content.Shared.Wieldable;
+using Content.Shared.Teleportation.Components;
 using Robust.Shared.Audio.Systems;
 using Robust.Shared.Network;
 using Robust.Shared.Physics;
 using Robust.Shared.Physics.Components;
 using Robust.Shared.Physics.Dynamics.Joints;
 using Robust.Shared.Physics.Systems;
+using Robust.Shared.Physics.Events;
 using Robust.Shared.Serialization;
 using Robust.Shared.Timing;
 
@@ -54,6 +57,24 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
         SubscribeLocalEvent<GrapplingHookedHunterComponent, DidEquipHandEvent>(OnHookedEquipHand);
 
         SubscribeAllEvent<RequestGrapplingHunterReelMessage>(OnGrapplingReel);
+
+        SubscribeLocalEvent<PhysicsComponent, StartCollideEvent>(OnPhysicsStartCollide);
+    }
+
+    private const string PortalFixtureId = "portalFixture";
+
+    private void OnPhysicsStartCollide(EntityUid uid, PhysicsComponent component, ref StartCollideEvent args)
+    {
+        if (HasComp<PortalComponent>(uid))
+            return;
+
+        if (!args.OtherEntity.Valid || !HasComp<PortalComponent>(args.OtherEntity))
+            return;
+
+        if (args.OtherFixtureId != PortalFixtureId)
+            return;
+
+        HandleEntityEnteredPortal(uid);
     }
 
     private void OnGunShot(EntityUid uid, GrapplingGunHunterComponent component, ref GunShotEvent args)
@@ -269,6 +290,40 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
         }
 
         SetReeling(activeItem.Value, grappling, msg.Reeling, player);
+    }
+
+    public void HandleEntityEnteredPortal(EntityUid subject)
+    {
+        if (!EntityManager.EntityExists(subject))
+            return;
+
+        if (TryComp<GrapplingHookedHunterComponent>(subject, out var hooked) &&
+            hooked.Gun is { } hookedGun &&
+            TryComp(hookedGun, out GrapplingGunHunterComponent? hookedGunComp))
+        {
+            ReturnHook(hookedGun, hookedGunComp, null);
+        }
+
+        if (TryComp(subject, out HandsComponent? hands))
+        {
+            foreach (var held in _hands.EnumerateHeld((subject, hands)))
+            {
+                if (!TryComp<GrapplingGunHunterComponent>(held, out var heldGunComp))
+                    continue;
+
+                if (heldGunComp.Projectile == null && heldGunComp.HookedTarget == null)
+                    continue;
+
+                ReturnHook(held, heldGunComp, null);
+            }
+        }
+
+        if (TryComp<GrapplingHookHunterComponent>(subject, out var hook) &&
+            hook.Gun is { } gun &&
+            TryComp(gun, out GrapplingGunHunterComponent? ownerGunComp))
+        {
+            ReturnHook(gun, ownerGunComp, null);
+        }
     }
 
     private void SetReeling(EntityUid uid, GrapplingGunHunterComponent component, bool value, EntityUid? user)
