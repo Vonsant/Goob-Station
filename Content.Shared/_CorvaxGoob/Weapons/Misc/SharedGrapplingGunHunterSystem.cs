@@ -312,6 +312,27 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             return;
         }
 
+        if (msg.Reeling)
+        {
+            var gunXform = Transform(activeItem.Value);
+            var targetXform = Transform(grappling.HookedTarget.Value);
+
+            if (targetXform.MapID != gunXform.MapID)
+            {
+                return;
+            }
+
+            var stopLength = MathF.Max(grappling.JointMinLength, grappling.ReelStopDistance);
+            var currentDistance = Vector2.Distance(
+                TransformSystem.GetMapCoordinates(activeItem.Value, gunXform).Position,
+                TransformSystem.GetMapCoordinates(grappling.HookedTarget.Value, targetXform).Position);
+
+            if (currentDistance <= stopLength + grappling.PullStopTolerance)
+            {
+                return;
+            }
+        }
+
         SetReeling((activeItem.Value, grappling), msg.Reeling, player);
     }
 
