@@ -1,6 +1,6 @@
 - type: entity
   id: GrapplingHookHunter
-  name: SCD capture head
+  name: Grappler Capture Head
   categories: [ HideSpawnMenu ]
   components:
     - type: EmbeddableProjectile

@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using Content.Shared._CorvaxGoob.Weapons.Ranged.Components;
 using Content.Shared.CombatMode;
@@ -14,6 +15,7 @@ using Content.Shared.Weapons.Ranged.Systems;
 using Content.Shared.Wieldable;
 using Content.Shared.Teleportation.Components;
 using Robust.Shared.Audio.Systems;
+using Robust.Shared.GameObjects;
 using Robust.Shared.Network;
 using Robust.Shared.Physics;
 using Robust.Shared.Physics.Components;
@@ -77,8 +79,10 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
         HandleEntityEnteredPortal(uid);
     }
 
-    private void OnGunShot(EntityUid uid, GrapplingGunHunterComponent component, ref GunShotEvent args)
+    private void OnGunShot(Entity<GrapplingGunHunterComponent> entity, ref GunShotEvent args)
     {
+        var (uid, component) = entity;
+
         foreach (var (shotUid, _) in args.Ammo)
         {
             if (shotUid is null || !TryComp<GrapplingHookHunterComponent>(shotUid, out var hook))
@@ -102,63 +106,75 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
         }
 
         component.Stream = _audio.Stop(component.Stream);
-        TryComp<AppearanceComponent>(uid, out var appearance);
-        _appearance.SetData(uid, SharedTetherGunSystem.TetherVisualsStatus.Key, false, appearance);
+        if (TryComp<AppearanceComponent>(uid, out var appearance))
+            _appearance.SetData(uid, SharedTetherGunSystem.TetherVisualsStatus.Key, false, appearance);
+        else
+            _appearance.SetData(uid, SharedTetherGunSystem.TetherVisualsStatus.Key, false);
         Dirty(uid, component);
     }
 
-    private void OnGunActivate(EntityUid uid, GrapplingGunHunterComponent component, ActivateInWorldEvent args)
+    private void OnGunActivate(Entity<GrapplingGunHunterComponent> entity, ref ActivateInWorldEvent args)
     {
+        var (uid, component) = entity;
+
         if (!Timing.IsFirstTimePredicted || args.Handled || !args.Complex || component.Projectile is not { })
             return;
 
         _audio.PlayPredicted(component.CycleSound, uid, args.User);
-        ReturnHook(uid, component, args.User);
+        ReturnHook(entity, args.User);
         args.Handled = true;
     }
 
-    private void OnGunDeselected(EntityUid uid, GrapplingGunHunterComponent component, HandDeselectedEvent args)
+    private void OnGunDeselected(Entity<GrapplingGunHunterComponent> entity, ref HandDeselectedEvent args)
     {
-        SetReeling(uid, component, false, args.User);
+        SetReeling(entity, false, args.User);
     }
 
-    private void OnGunGotUnequipped(EntityUid uid, GrapplingGunHunterComponent component, GotUnequippedHandEvent args)
+    private void OnGunGotUnequipped(Entity<GrapplingGunHunterComponent> entity, ref GotUnequippedHandEvent args)
     {
+        var (uid, component) = entity;
+
         if (component.Projectile == null && component.HookedTarget == null)
             return;
 
-        ReturnHook(uid, component, args.User);
+        ReturnHook(entity, args.User);
     }
 
-    private void OnGunUnwielded(EntityUid uid, GrapplingGunHunterComponent component, ref ItemUnwieldedEvent args)
+    private void OnGunUnwielded(Entity<GrapplingGunHunterComponent> entity, ref ItemUnwieldedEvent args)
     {
+        var (uid, component) = entity;
+
         if (!component.RequireWieldedHands)
             return;
 
         if (component.Projectile == null && component.HookedTarget == null)
             return;
 
-        ReturnHook(uid, component, args.User);
+        ReturnHook(entity, args.User);
     }
 
-    private void OnGunJointRemoved(EntityUid uid, GrapplingGunHunterComponent component, JointRemovedEvent args)
+    private void OnGunJointRemoved(Entity<GrapplingGunHunterComponent> entity, ref JointRemovedEvent args)
     {
+        var (uid, component) = entity;
+
         if (args.Joint.ID != GrapplingJoint)
             return;
 
         if (component.Projectile == null && component.HookedTarget == null)
             return;
 
-        ReturnHook(uid, component, null);
+        ReturnHook(entity, null);
     }
 
-    private void OnGunShutdown(EntityUid uid, GrapplingGunHunterComponent component, ref ComponentShutdown args)
+    private void OnGunShutdown(Entity<GrapplingGunHunterComponent> entity, ref ComponentShutdown args)
     {
-        ReturnHook(uid, component, null, false);
+        ReturnHook(entity, null, false);
     }
 
-    private void OnHookEmbed(EntityUid uid, GrapplingHookHunterComponent component, ref ProjectileEmbedEvent args)
+    private void OnHookEmbed(Entity<GrapplingHookHunterComponent> entity, ref ProjectileEmbedEvent args)
     {
+        var (uid, component) = entity;
+
         if (component.Gun is not { } gun || !TryComp(gun, out GrapplingGunHunterComponent? gunComp))
             return;
 
@@ -168,9 +184,9 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
         if (!EntityManager.EntityExists(args.Embedded) || args.Embedded == gun)
             return;
 
-        if (!TryComp<MobStateComponent>(args.Embedded, out _))
+        if (!HasComp<MobStateComponent>(args.Embedded))
         {
-            ReturnHook(gun, gunComp, null);
+            ReturnHook((gun, gunComp), null);
             return;
         }
 
@@ -182,7 +198,7 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             }
             else if (existingHooked.Gun is { } existingGun && existingGun != gun)
             {
-                ReturnHook(gun, gunComp, null);
+                ReturnHook((gun, gunComp), null);
                 return;
             }
         }
@@ -190,7 +206,7 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
         if (!TryComp<PhysicsComponent>(args.Embedded, out var physics) ||
             (physics.BodyType & (BodyType.Dynamic | BodyType.KinematicController)) == 0x0)
         {
-            ReturnHook(gun, gunComp, null);
+            ReturnHook((gun, gunComp), null);
             return;
         }
 
@@ -201,21 +217,24 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
         gunComp.HookedTarget = args.Embedded;
         gunComp.Reeling = false;
         Dirty(gun, gunComp);
-        
-        if (gunComp.ApplyStunOnAttach)
-            TryApplyHookStun(args.Embedded, gunComp, component.Shooter);
 
         var hooked = EnsureComp<GrapplingHookedHunterComponent>(args.Embedded);
         hooked.Gun = gun;
         hooked.Hook = uid;
         Dirty(args.Embedded, hooked);
 
+        if (gunComp.ApplyStunOnAttach && gunComp.StunDuration > TimeSpan.Zero)
+        {
+            var stunEvent = new GrapplingHookHunterStunEvent(gun, component.Shooter, gunComp.StunDuration);
+            RaiseLocalEvent(args.Embedded, stunEvent);
+        }
+
         var gunXform = Transform(gun);
         var targetXform = Transform(args.Embedded);
 
         if (gunXform.MapID != targetXform.MapID)
         {
-            ReturnHook(gun, gunComp, null);
+            ReturnHook((gun, gunComp), null);
             return;
         }
 
@@ -223,15 +242,9 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             TransformSystem.GetMapCoordinates(gun, gunXform).Position,
             TransformSystem.GetMapCoordinates(args.Embedded, targetXform).Position);
 
-        if (distance > gunComp.MaxRange)
+        if (distance > gunComp.MaxRange || distance < gunComp.MinRange)
         {
-            ReturnHook(gun, gunComp, null);
-            return;
-        }
-
-        if (distance < gunComp.MinRange)
-        {
-            ReturnHook(gun, gunComp, null);
+            ReturnHook((gun, gunComp), null);
             return;
         }
         
@@ -246,19 +259,23 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             Dirty(gun, jointComp);
     }
 
-    private void OnHookShutdown(EntityUid uid, GrapplingHookHunterComponent component, ref ComponentShutdown args)
+    private void OnHookShutdown(Entity<GrapplingHookHunterComponent> entity, ref ComponentShutdown args)
     {
+        var (uid, component) = entity;
+
         if (component.Gun is not { } gun || !TryComp(gun, out GrapplingGunHunterComponent? gunComp))
             return;
 
         if (gunComp.Projectile != uid)
             return;
 
-        ReturnHook(gun, gunComp, null);
+        ReturnHook((gun, gunComp), null);
     }
 
-    private void OnHookedEquipHand(EntityUid uid, GrapplingHookedHunterComponent component, DidEquipHandEvent args)
+    private void OnHookedEquipHand(Entity<GrapplingHookedHunterComponent> entity, ref DidEquipHandEvent args)
     {
+        var (uid, component) = entity;
+
         if (component.Gun is not { } gun)
             return;
 
@@ -271,7 +288,7 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
         if (args.Equipped != gun)
             return;
 
-        ReturnHook(gun, gunComp, args.User);
+        ReturnHook((gun, gunComp), args.User);
     }
 
     private void OnGrapplingReel(RequestGrapplingHunterReelMessage msg, EntitySessionEventArgs args)
@@ -295,7 +312,7 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             return;
         }
 
-        SetReeling(activeItem.Value, grappling, msg.Reeling, player);
+        SetReeling((activeItem.Value, grappling), msg.Reeling, player);
     }
 
     public void HandleEntityEnteredPortal(EntityUid subject)
@@ -307,7 +324,7 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             hooked.Gun is { } hookedGun &&
             TryComp(hookedGun, out GrapplingGunHunterComponent? hookedGunComp))
         {
-            ReturnHook(hookedGun, hookedGunComp, null);
+            ReturnHook((hookedGun, hookedGunComp), null);
         }
 
         if (TryComp(subject, out HandsComponent? hands))
@@ -320,7 +337,7 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
                 if (heldGunComp.Projectile == null && heldGunComp.HookedTarget == null)
                     continue;
 
-                ReturnHook(held, heldGunComp, null);
+                ReturnHook((held, heldGunComp), null);
             }
         }
 
@@ -328,12 +345,14 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             hook.Gun is { } gun &&
             TryComp(gun, out GrapplingGunHunterComponent? ownerGunComp))
         {
-            ReturnHook(gun, ownerGunComp, null);
+            ReturnHook((gun, ownerGunComp), null);
         }
     }
 
-    private void SetReeling(EntityUid uid, GrapplingGunHunterComponent component, bool value, EntityUid? user)
+    private void SetReeling(Entity<GrapplingGunHunterComponent> entity, bool value, EntityUid? user)
     {
+        var (uid, component) = entity;
+
         if (component.Reeling == value)
             return;
 
@@ -368,27 +387,27 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             if (component.Projectile == null)
             {
                 if (component.Reeling)
-                    SetReeling(uid, component, false, null);
+                    SetReeling((uid, component), false, null);
                 continue;
             }
 
             if (!EntityManager.EntityExists(component.Projectile.Value))
             {
-                ReturnHook(uid, component, null);
+                ReturnHook((uid, component), null);
                 continue;
             }
 
             if (component.HookedTarget == null)
             {
                 if (component.Reeling)
-                    SetReeling(uid, component, false, null);
+                    SetReeling((uid, component), false, null);
 
                 var gunXform = Transform(uid);
                 var projectileXform = Transform(component.Projectile.Value);
 
                 if (projectileXform.MapID != gunXform.MapID)
                 {
-                    ReturnHook(uid, component, null);
+                    ReturnHook((uid, component), null);
                     continue;
                 }
 
@@ -397,14 +416,14 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
                     TransformSystem.GetMapCoordinates(component.Projectile.Value, projectileXform).Position);
 
                 if (distance > component.MaxRange)
-                    ReturnHook(uid, component, null);
+                    ReturnHook((uid, component), null);
 
                 continue;
             }
 
             if (!EntityManager.EntityExists(component.HookedTarget.Value))
             {
-                ReturnHook(uid, component, null);
+                ReturnHook((uid, component), null);
                 continue;
             }
 
@@ -412,7 +431,7 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
                 !jointComp.GetJoints.TryGetValue(GrapplingJoint, out var joint) ||
                 joint is not DistanceJoint distanceJoint)
             {
-                SetReeling(uid, component, false, null);
+                SetReeling((uid, component), false, null);
                 continue;
             }
 
@@ -424,7 +443,7 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
 
             if (targetXform.MapID != reelGunXform.MapID)
             {
-                ReturnHook(uid, component, null);
+                ReturnHook((uid, component), null);
                 continue;
             }
 
@@ -435,7 +454,7 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
 
             if (currentDistance <= component.ReelStopDistance)
             {
-                SetReeling(uid, component, false, null);
+                SetReeling((uid, component), false, null);
                 continue;
             }
 
@@ -449,19 +468,20 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
 
             if (distanceJoint.MaxLength <= stopLength + component.PullStopTolerance)
             {
-                SetReeling(uid, component, false, null);
+                SetReeling((uid, component), false, null);
             }
         }
     }
 
-    private void ReturnHook(EntityUid uid, GrapplingGunHunterComponent component, EntityUid? user, bool restoreAmmo = true)
+    private void ReturnHook(Entity<GrapplingGunHunterComponent> entity, EntityUid? user, bool restoreAmmo = true)
     {
+        var (uid, component) = entity;
         var projectile = component.Projectile;
         var target = component.HookedTarget;
         var hadProjectile = projectile is not null;
         var showLoaded = restoreAmmo && hadProjectile;
 
-        SetReeling(uid, component, false, user);
+        SetReeling(entity, false, user);
 
         component.Projectile = null;
         component.HookedTarget = null;
@@ -479,8 +499,10 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
             RemCompDeferred<GrapplingHookedHunterComponent>(targetUid);
         }
 
-        TryComp<AppearanceComponent>(uid, out var appearance);
-        _appearance.SetData(uid, SharedTetherGunSystem.TetherVisualsStatus.Key, showLoaded, appearance);
+        if (TryComp<AppearanceComponent>(uid, out var appearance))
+            _appearance.SetData(uid, SharedTetherGunSystem.TetherVisualsStatus.Key, showLoaded, appearance);
+        else
+            _appearance.SetData(uid, SharedTetherGunSystem.TetherVisualsStatus.Key, showLoaded);
 
         if (_netManager.IsServer && projectile is { } proj && EntityManager.EntityExists(proj))
         {
@@ -496,10 +518,6 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
         }
     }
 
-    protected virtual void TryApplyHookStun(EntityUid target, GrapplingGunHunterComponent component, EntityUid? shooter)
-    {
-    }
-
     [Serializable, NetSerializable]
     protected sealed class RequestGrapplingHunterReelMessage : EntityEventArgs
     {
@@ -509,5 +527,19 @@ public abstract class SharedGrapplingGunHunterSystem : EntitySystem
         {
             Reeling = reeling;
         }
+    }
+}
+
+public sealed class GrapplingHookHunterStunEvent : HandledEntityEventArgs
+{
+    public EntityUid Gun;
+    public EntityUid? Shooter;
+    public TimeSpan Duration;
+
+    public GrapplingHookHunterStunEvent(EntityUid gun, EntityUid? shooter, TimeSpan duration)
+    {
+        Gun = gun;
+        Shooter = shooter;
+        Duration = duration;
     }
 }

@@ -4,7 +4,7 @@
   description: uplink-syndicate-capture-device-scd-desc
   productEntity: WeaponGrapplingGunHunterSyndicate
   cost:
-    Telecrystal: 45
+    Telecrystal: 40
   categories:
   - UplinkWeaponry
   conditions:
